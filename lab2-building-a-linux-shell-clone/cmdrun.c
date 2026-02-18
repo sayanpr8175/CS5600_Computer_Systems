@@ -1,0 +1,505 @@
+/*
+ * Skeleton code for Lab 2 - Shell processing
+ * This file contains skeleton code for executing parsed commands.
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <assert.h>
+#include <ctype.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include "cmdparse.h"
+#include "cmdrun.h"
+
+/* cmd_exec(cmd, pass_pipefd)
+ *
+ *   Execute the single command specified in the 'cmd' command structure.
+ *
+ *   The 'pass_pipefd' argument is used for pipes.
+ *
+ *     On input, '*pass_pipefd' is the file descriptor that the
+ *     current command should use to read the output of the previous
+ *     command. That is, it's the "read end" of the previous
+ *     pipe, if there was a previous pipe; if there was not, then
+ *     *pass_pipefd will equal STDIN_FILENO.
+ *
+ *     On output, cmd_exec should set '*pass_pipefd' to the file descriptor
+ *     used for reading from THIS command's pipe (so that the next command
+ *     can use it). If this command didn't have a pipe -- that is,
+ *     if cmd->controlop != PIPE -- then this function should set
+ *     '*pass_pipefd = STDIN_FILENO'.
+ *
+ *   Returns the process ID of the forked child, or < 0 if some system call
+ *   fails.
+ *
+ *   Besides handling normal commands, redirection, and pipes, you must also
+ *   handle three internal commands: "cd", "exit", and "our_pwd".
+ *   (Why must "cd", "exit", and "our_pwd" (a version of "pwd") be implemented
+ *   by the shell, versus simply exec()ing to handle them?)
+ *
+ *   Note that these special commands still have a status!
+ *   For example, "cd DIR" should return status 0 if we successfully change
+ *   to the DIR directory, and status 1 otherwise.
+ *   Thus, "cd /tmp && echo /tmp exists" should print "/tmp exists" to stdout
+ *      if and only if the /tmp directory exists.
+ *   Not only this, but redirections should work too!
+ *   For example, "cd /tmp > foo" should create an empty file named 'foo';
+ *   and "cd /tmp 2> foo" should print any error messages to 'foo'.
+ *
+ *   Some specifications:
+ *
+ *       --subshells:
+ *         the exit status should be either 0 (if the last
+ *         command would have returned 0) or 5 (if the last command
+ *         would have returned something non-zero). This is not the
+ *         behavior of bash.
+ *
+ *       --cd:
+ *
+ *          this builtin takes exactly one argument besides itself (this
+ *          is also not bash's behavior). if it is given fewer
+ *          ("cd") or more ("cd foo bar"), that is a syntax error.  Any
+ *          error (syntax or system call) should result in a non-zero
+ *          exit status. Here is the specification for output:
+ *
+ *                ----If there is a syntax error, your shell should
+ *                display the following message verbatim:
+ *                   "cd: Syntax error! Wrong number of arguments!"
+ *
+ *                ----If there is a system call error, your shell should
+ *                invoke perror("cd")
+ *
+ *       --our_pwd:
+ *
+ *          This stands for "our pwd", which prints the working
+ *          directory to stdout, and has exit status 0 if successful and
+ *          non-zero otherwise. this builtin takes no arguments besides
+ *          itself. Handle errors in analogy with cd. Here, the syntax
+ *          error message should be:
+ *
+ *              "pwd: Syntax error! Wrong number of arguments!"
+ *
+ *       --exit:
+ *
+ *          As noted in the lab, exit can take 0 or 1 arguments. If it
+ *          is given zero arguments (besides itself), then the shell
+ *          exits with command status 0. If it is given one numerical
+ *          argument, the shell exits with that numerical argument. If it
+ *          is given one non-numerical argument, do something sensible.
+ *          If it is given more than one argument, print an error message,
+ *          and do not exit.
+ *
+ *
+ *   Implementation hints are given in the function body.
+ */
+static pid_t
+cmd_exec(command_t *cmd, int *pass_pipefd)
+{
+        (void)pass_pipefd;      // get rid of unused warning
+	pid_t pid = -1;		// process ID for child
+	int pipefd[2];		// file descriptors for this process's pipe
+
+	/* EXERCISE 4: Complete this function!
+	 * We've written some of the skeleton for you, but feel free to
+	 * change it.
+	 */
+
+	// Create a pipe, if this command is the left-hand side of a pipe.
+	// Return -1 if the pipe fails.
+	if (cmd->controlop == CMD_PIPE) {
+		/* Your code here*/
+
+		if(pipe(pipefd) < 0)
+		{
+			return -1;
+		}
+	}
+
+	pid = fork();
+
+	// fail
+	if(pid < 0)
+	{
+		return -1;
+	}
+
+	// child
+
+	if(pid == 0)
+	{
+		if(cmd->controlop == CMD_PIPE)
+		{
+			// child will have writing access on same mem of parent.
+			close(pipefd[0]);
+			dup2(pipefd[1], STDOUT_FILENO);
+
+			close(pipefd[1]);
+
+		}
+		// if pipfd is the read end // remember in children
+		if(*pass_pipefd != STDIN_FILENO){
+
+			dup2(*pass_pipefd, STDIN_FILENO);
+
+			close(*pass_pipefd);
+		}
+
+		
+
+		//# Redirection
+	  	//[ '(Redirection)',
+	    //'echo Start ; echo File > temp.out',
+	    //'Start' ]
+
+		// cmd > filename redirection
+
+		if(cmd->redirect_filename[STDOUT_FILENO])
+		{
+			int fd = open(cmd->redirect_filename[STDOUT_FILENO],O_WRONLY | O_CREAT | O_TRUNC, 0666);
+
+			if(fd < 0)
+			{
+				perror(cmd->redirect_filename[STDOUT_FILENO]);
+				_exit(1);
+			}
+
+			dup2(fd, STDOUT_FILENO);
+
+			close(fd);
+		}
+
+		// cmd < filename redirection
+		
+		if(cmd->redirect_filename[STDIN_FILENO])
+		{
+			int fd = open(cmd->redirect_filename[STDIN_FILENO], O_RDONLY);
+
+			if(fd < 0)
+			{
+				perror(cmd->redirect_filename[STDIN_FILENO]);
+				_exit(1);
+			}
+
+			dup2(fd, STDIN_FILENO);
+			close(fd);
+		}
+
+		// Error redirection
+
+		if(cmd->redirect_filename[STDERR_FILENO])
+		{
+			int fd = open(cmd->redirect_filename[STDERR_FILENO], O_WRONLY | O_CREAT | O_TRUNC, 0666);
+
+			if(fd < 0)
+			{
+				perror(cmd->redirect_filename[STDERR_FILENO]);
+				_exit(1);
+			}
+
+			dup2(fd, STDERR_FILENO);
+
+			close(fd);
+		}
+
+		// if subshell
+
+		 /*       --subshells:
+ *         the exit status should be either 0 (if the last
+ *         command would have returned 0) or 5 (if the last command
+ *         would have returned something non-zero). This is not the
+ *         behavior of bash. */
+
+		if(cmd->subshell)
+		{
+			int status = cmd_line_exec(cmd->subshell);
+			if(status){
+				_exit(5);
+			}else{
+				_exit(0);
+			}
+			
+		} 
+		// Just empty command - enter
+		else if(cmd->argv[0] == NULL)
+		{
+			_exit(0);
+		}
+
+/**
+ *       --cd:
+ *
+ *          this builtin takes exactly one argument besides itself (this
+ *          is also not bash's behavior). if it is given fewer
+ *          ("cd") or more ("cd foo bar"), that is a syntax error.  Any
+ *          error (syntax or system call) should result in a non-zero
+ *          exit status. Here is the specification for output:
+ *
+ *                ----If there is a syntax error, your shell should
+ *                display the following message verbatim:
+ *                   "cd: Syntax error! Wrong number of arguments!"
+ *
+ *                ----If there is a system call error, your shell should
+ *                invoke perror("cd")
+**/
+		else if(strcmp(cmd->argv[0], "cd") == 0)
+		{
+			if(!cmd->argv[1] || cmd->argv[2])
+			{
+				fprintf(stderr, "cd: Syntax error! Wrong number of arguments!\n");
+				_exit(1);
+			}
+
+			if(chdir(cmd->argv[1]) < 0)
+			{
+				perror("cd");
+				_exit(1);
+			}
+			_exit(0);
+		}
+
+/**
+ *  *       --our_pwd:
+ *
+ *          This stands for "our pwd", which prints the working
+ *          directory to stdout, and has exit status 0 if successful and
+ *          non-zero otherwise. this builtin takes no arguments besides
+ *          itself. Handle errors in analogy with cd. Here, the syntax
+ *          error message should be:
+ *
+ *              "pwd: Syntax error! Wrong number of arguments!"
+**/
+
+			else if(strcmp(cmd->argv[0], "our_pwd")==0){
+
+				if(cmd->argv[1])
+				{
+					fprintf(stderr, "pwd: Syntax error! Wrong number of arguments!\n");
+					_exit(1);
+				}
+
+				char cwd[1024];
+				if(getcwd(cwd, sizeof(cwd))==NULL)
+				{
+					perror("pwd");
+					_exit(1);
+				}
+				printf("%s\n", cwd);
+				_exit(0);
+			}
+
+
+
+/*
+ *       --exit:
+ *
+ *          As noted in the lab, exit can take 0 or 1 arguments. If it
+ *          is given zero arguments (besides itself), then the shell
+ *          exits with command status 0. If it is given one numerical
+ *          argument, the shell exits with that numerical argument. If it
+ *          is given one non-numerical argument, do something sensible.
+ *          If it is given more than one argument, print an error message,
+ *          and do not exit.
+*/
+
+		else if(strcmp(cmd->argv[0], "exit") == 0)
+		{
+			if(cmd->argv[1] && cmd->argv[2])
+			{
+				fprintf(stderr, "exit: Too many arguments!\n");
+				_exit(1);
+			}
+			if(cmd->argv[1])
+			{
+				_exit(atoi(cmd->argv[1]));
+			}
+			_exit(0);
+		}
+
+		else{
+			// replace with program
+			execvp(cmd->argv[0], cmd->argv);
+			perror(cmd->argv[0]);
+			_exit(1);
+		}
+
+
+
+	}
+
+	// In the parent, you should:
+	//    1. Close some file descriptors.  Hint: Consider the write end
+	//       of this command's pipe, and one other fd as well.
+	//    2. Handle the special "exit", "cd", and "our_pwd" commands.
+	//    3. Set *pass_pipefd as appropriate.
+
+
+	// NOt the child
+	if(pid>0)
+	{
+		if(cmd->controlop == CMD_PIPE)
+		{
+			// closing to end the stream;
+			close(pipefd[1]);
+		}
+
+		// readin
+		
+		if(*pass_pipefd != STDIN_FILENO)
+		{
+			
+			close(*pass_pipefd);
+		}
+
+		if(cmd->controlop == CMD_PIPE)
+		{
+			*pass_pipefd = pipefd[0];
+		}
+		else{
+			*pass_pipefd = STDIN_FILENO;
+		}
+
+		if(cmd->argv[0] && strcmp(cmd->argv[0], "exit") == 0)
+		{
+			if(!cmd->argv[1] || !cmd->argv[2])
+			{
+				int code = cmd->argv[1] ? atoi(cmd->argv[1]) : 0;
+				_exit(code);
+			}
+		}
+
+		if(cmd->argv[0] && strcmp(cmd->argv[0], "cd") == 0)
+		{
+			if(cmd->argv[1] && !cmd->argv[2])
+			{
+				chdir(cmd->argv[1]);
+			}
+		}
+	}
+
+	/* Your code here */
+
+	// return the child process ID
+	return pid;
+}
+
+
+/* cmd_line_exec(cmdlist)
+ *
+ *   Execute the command list.
+ *
+ *   Execute each individual command with 'cmd_exec'.
+ *   String commands together depending on the 'cmdlist->controlop' operators.
+ *   Returns the exit status of the entire command list, which equals the
+ *   exit status of the last completed command.
+ *
+ *   The operators have the following behavior:
+ *
+ *      CMD_END, CMD_SEMICOLON
+ *                        Wait for command to exit.  Proceed to next command
+ *                        regardless of status.
+ *      CMD_AND           Wait for command to exit.  Proceed to next command
+ *                        only if this command exited with status 0.  Otherwise
+ *                        exit the whole command line.
+ *      CMD_OR            Wait for command to exit.  Proceed to next command
+ *                        only if this command exited with status != 0.
+ *                        Otherwise exit the whole command line.
+ *      CMD_BACKGROUND, CMD_PIPE
+ *                        Do not wait for this command to exit.  Pretend it
+ *                        had status 0, for the purpose of returning a value
+ *                        from cmd_line_exec.
+ */
+
+int
+cmd_line_exec(command_t *cmdlist)
+{
+	int cmd_status = 0;	    // status of last command executed
+	int pipefd = STDIN_FILENO;  // read end of last pipe
+
+	while (cmdlist) {
+		int wp_status;	    // Use for waitpid's status argument!
+				    // Read the manual page for waitpid() to
+				    // see how to get the command's exit
+				    // status (cmd_status) from this value.
+
+		// EXERCISE 4: Fill out this function!
+
+		/* Your code here */
+
+		pid_t pid = cmd_exec(cmdlist, &pipefd);
+
+		if(pid < 0){
+			abort;
+		}
+
+		switch (cmdlist->controlop)
+		{
+		case CMD_END:
+		case CMD_SEMICOLON:
+			/* code */
+
+			if(pid>0 && waitpid(pid, &wp_status, 0) >= 0){
+				if WIFEXITED(wp_status)
+				{
+					cmd_status = WEXITSTATUS(wp_status);
+				}else{
+					cmd_status = -1;
+				}
+			}
+			break;
+		// For CMD_AND the first command should succeed then 2nd.
+		case CMD_AND:
+			if(pid>0 && waitpid(pid, &wp_status, 0)>=0)
+			{
+				if WIFEXITED(wp_status)
+				{
+					cmd_status = WEXITSTATUS(wp_status);
+				}else{
+					cmd_status = -1;
+				}
+			}
+			if(cmd_status!=0)
+			{
+				goto done;
+			}
+			break;
+
+		case CMD_OR:
+			if(pid>0 && waitpid(pid, &wp_status, 0)>=0)
+			{
+				if WIFEXITED(wp_status)
+				{
+					cmd_status = WEXITSTATUS(wp_status);
+				}else{
+					cmd_status = -1;
+				}
+			}
+			if(cmd_status==0) // first command succeeded no 2nd cmd need
+			{
+				goto done;
+			}
+			break;
+		
+		case CMD_BACKGROUND: // for background no need for checking
+		case CMD_PIPE: // for pipe also first command should run while 2nd checks
+			cmd_status = 0;
+			break;
+
+		default:
+			abort();
+			break;
+		}
+
+
+		cmdlist = cmdlist->next;
+	}
+
+        while (waitpid(0, 0, WNOHANG) > 0);
+
+done:
+	return cmd_status;
+}
