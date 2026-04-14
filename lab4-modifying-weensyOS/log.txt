@@ -1,0 +1,10 @@
+Starting WeensyOS
+[kernel] VA[0x1000] maps to PA[0x1000]
+program fork: entry point 0x100000
+  seg[0]: addr 0x100000, size 0x1670, data_size 0x1670, read-only? (yes)
+  seg[1]: addr 0x102000, size 0x1024, data_size 0x0, read-only? (no)
+Starting WeensyOS
+[kernel] VA[0x1000] maps to PA[0x1000]
+program fork: entry point 0x100000
+  seg[0]: addr 0x100000, size 0x1670, data_size 0x1670, read-only? (yes)
+  seg[1]: addr 0x102000, size 0x1024, data_size 0x0, read-only? (no)
